@@ -3,6 +3,7 @@ import readline from "node:readline/promises"
 import { loadConfig } from "./config.js"
 import type OpenAI from "openai"
 import { runAgent } from "./agent.js"
+import { createSession, listSessions, loadMessages, saveMessage, sessionExists } from "./session.js"
 
 // ---------- 1. 命令行标志 ----------
 const { values: flags } = parseArgs({
@@ -43,12 +44,15 @@ console.log(`Type a message, or /help for commands.`)
 function printHelp() {
   console.log(`
 Commands:
-  /help    Show this help
-  /exit    Quit mini-agent
+  /help          Show this help
+  /sessions      List recent saved sessions
+  /resume <id>   Resume a saved session by id
+  /exit          Quit mini-agent
 Anything else is sent to the assistant.`)
 }
 
 const history: OpenAI.Chat.ChatCompletionMessageParam[] = []
+let sessionId: number | null = null // created lazily on the first message
 
 while (true) {
   const line = (await rl.question("\n> ")).trim()
@@ -60,11 +64,34 @@ while (true) {
       printHelp()
       continue
     }
+    if (line === "/sessions") {
+      const sessions = listSessions()
+      if (sessions.length === 0) console.log("No saved sessions yet.")
+      for (const s of sessions) console.log(`#${s.id}  ${s.created_at}  ${s.title}`)
+      continue
+    }
+    if (line.startsWith("/resume ")) {
+      const id = Number(line.slice("/resume ".length).trim())
+      if (!Number.isInteger(id) || !sessionExists(id)) {
+        console.log(`No session #${id}. Try /sessions.`)
+        continue
+      }
+      sessionId = id
+      history.length = 0
+      history.push(...loadMessages(id))
+      console.log(`Resumed session #${id} (${history.length} messages). Continue where you left off.`)
+      continue
+    }
     console.log(`Unknown command: ${line} (try /help)`)
     continue
   }
 
+  if (sessionId === null) sessionId = createSession(line) // first message titles the session
+
   history.push({ role: "user", content: line })
+  saveMessage(sessionId, { role: "user", content: line })
+
+  const lengthBefore = history.length
   console.log()
   await runAgent(config.model, system, history, {
     onText: (chunk) => process.stdout.write(chunk),
@@ -84,6 +111,9 @@ while (true) {
     },
   })
   console.log()
+
+  // runAgent 追加了助手回合和 tool 回复 — 把它们全部持久化。
+  for (const message of history.slice(lengthBefore)) saveMessage(sessionId, message)
 }
 
 rl.close()
