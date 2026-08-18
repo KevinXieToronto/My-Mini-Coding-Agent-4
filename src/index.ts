@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js"
 import type OpenAI from "openai"
 import { runAgent } from "./agent.js"
 import { createSession, listSessions, loadMessages, saveMessage, sessionExists } from "./session.js"
+import { color, spinner, toolCallLine, toolResultLine } from "./ui.js"
 
 // ---------- 1. 命令行标志 ----------
 const { values: flags } = parseArgs({
@@ -38,8 +39,8 @@ const rl = readline.createInterface({
   output: process.stdout,
 })
 
-console.log(`mini-agent — model: ${config.model}`)
-console.log(`Type a message, or /help for commands.`)
+console.log(color.bold("\n  mini-agent") + color.dim(`  ·  ${config.model}`))
+console.log(color.dim("  Type a message, /help for commands, /exit to quit."))
 
 function printHelp() {
   console.log(`
@@ -55,7 +56,7 @@ const history: OpenAI.Chat.ChatCompletionMessageParam[] = []
 let sessionId: number | null = null // created lazily on the first message
 
 while (true) {
-  const line = (await rl.question("\n> ")).trim()
+  const line = (await rl.question(color.cyan("\n> "))).trim()
   if (!line) continue
 
   if (line.startsWith("/")) {
@@ -93,23 +94,36 @@ while (true) {
 
   const lengthBefore = history.length
   console.log()
+  let stopSpinner: (() => void) | null = spinner("thinking…")
+  const stopIfSpinning = () => {
+    if (stopSpinner) {
+      stopSpinner()
+      stopSpinner = null
+    }
+  }
+
   await runAgent(config.model, system, history, {
-    onText: (chunk) => process.stdout.write(chunk),
-    onToolStart: (name, input) =>
-      console.log(`
-[tool] ${name} ${JSON.stringify(input).slice(0, 120)}`),
-    onToolEnd: (name, result, isError) =>
-      console.log(
-        isError
-          ? `[tool] ${name} FAILED: ${result.slice(0, 200)}`
-          : `[tool] ${name} ok (${result.length} chars)`,
-      ),
+    onText: (chunk) => {
+      stopIfSpinning()
+      process.stdout.write(chunk)
+    },
+    onToolStart: (name, input) => {
+      stopIfSpinning()
+      console.log("\n" + toolCallLine(name, input))
+      stopSpinner = spinner(`running ${name}…`)
+    },
+    onToolEnd: (name, result, isError) => {
+      stopIfSpinning()
+      console.log(toolResultLine(name, result, isError))
+      stopSpinner = spinner("thinking…")
+    },
     confirm: async (question) => {
-      const answer = await rl.question(`
-⚠ Allow ${question}? [y/N] `)
+      stopIfSpinning()
+      const answer = await rl.question(color.yellow(`\n⚠ Allow ${question}? `) + color.dim("[y/N] "))
       return answer.trim().toLowerCase() === "y"
     },
   })
+  stopIfSpinning()
   console.log()
 
   // runAgent 追加了助手回合和 tool 回复 — 把它们全部持久化。
