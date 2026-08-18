@@ -10,7 +10,7 @@ export interface Config {
 }
 
 const DEFAULTS: Config = {
-  model: "claude-opus-4-8",
+  model: "gpt-5",
   systemPrompt:
     "You are mini-agent, a concise coding assistant running in a Windows terminal. " +
     "Prefer short, direct answers with code blocks where helpful.",

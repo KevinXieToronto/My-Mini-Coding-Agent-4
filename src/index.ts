@@ -1,6 +1,8 @@
 import { parseArgs } from "node:util"
 import readline from "node:readline/promises"
 import { loadConfig } from "./config.js"
+import type OpenAI from "openai"
+import { complete, textOf } from "./llm.js"
 
 // ---------- 1. 命令行标志 ----------
 const { values: flags } = parseArgs({
@@ -42,6 +44,8 @@ Commands:
 Anything else is sent to the assistant.`)
 }
 
+const history: OpenAI.Chat.ChatCompletionMessageParam[] = []
+
 while (true) {
   const line = (await rl.question("\n> ")).trim()
   if (!line) continue
@@ -56,8 +60,10 @@ while (true) {
     continue
   }
 
-  // 目前只是回显。教程 03 会把它替换为真正的 LLM 调用。
-  console.log(`(echo) ${line}`)
+  history.push({ role: "user", content: line })
+  const message = await complete(config.model, config.systemPrompt, history)
+  history.push(message)
+  console.log("\n" + textOf(message))
 }
 
 rl.close()
