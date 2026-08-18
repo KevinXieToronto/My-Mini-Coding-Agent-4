@@ -2,7 +2,7 @@ import { parseArgs } from "node:util"
 import readline from "node:readline/promises"
 import { loadConfig } from "./config.js"
 import type OpenAI from "openai"
-import { complete, textOf } from "./llm.js"
+import { streamComplete, textOf } from "./llm.js"
 
 // ---------- 1. 命令行标志 ----------
 const { values: flags } = parseArgs({
@@ -61,9 +61,15 @@ while (true) {
   }
 
   history.push({ role: "user", content: line })
-  const message = await complete(config.model, config.systemPrompt, history)
+  console.log() // 回答之前空一行
+  const message = await streamComplete(
+    config.model,
+    config.systemPrompt,
+    history,
+    (chunk) => process.stdout.write(chunk),
+  )
   history.push(message)
-  console.log("\n" + textOf(message))
+  console.log() // 回答之后换行
 }
 
 rl.close()

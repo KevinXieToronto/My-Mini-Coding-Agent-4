@@ -24,3 +24,23 @@ export async function complete(
 export function textOf(message: OpenAI.Chat.ChatCompletionMessage): string {
   return message.content ?? ""
 }
+
+/**
+ * 与 complete() 类似，但每当有文本片段抵达时都会调用 onText(chunk)，
+ * 并且最终仍然以完整的最终消息 resolve。
+ */
+export async function streamComplete(
+  model: string,
+  system: string,
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  onText: (chunk: string) => void,
+): Promise<OpenAI.Chat.ChatCompletionMessage> {
+  const stream = client.chat.completions.stream({
+    model,
+    max_completion_tokens: 16000,
+    messages: [{ role: "system", content: system }, ...messages],
+  })
+  stream.on("content", (delta) => onText(delta))
+  const completion = await stream.finalChatCompletion()
+  return completion.choices[0].message
+}
